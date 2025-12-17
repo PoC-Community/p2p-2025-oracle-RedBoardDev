@@ -22,6 +22,22 @@ contract Oracle {
         owner = msg.sender;
     }
 
+    function submitPrice(string memory coin, uint256 price) public {
+        require(isNode[msg.sender], "Not a node");
+
+        uint256 roundId = rounds[coin].id;
+
+        require(!hasSubmitted[coin][roundId][msg.sender], "Already submitted for this round");
+
+        nodePrices[coin][roundId][msg.sender] = price;
+        hasSubmitted[coin][roundId][msg.sender] = true;
+        rounds[coin].totalSubmissionCount += 1;
+
+        if (rounds[coin].totalSubmissionCount >= getQuorum()) {
+            _finalizePrice(coin, roundId);
+        }
+    }
+
     function getQuorum() public view returns (uint256) {
         uint256 nodeCount = nodes.length;
         if (nodeCount < 3) {
@@ -48,5 +64,29 @@ contract Oracle {
                 break;
             }
         }
+    }
+
+    function _finalizePrice(string memory coin, uint256 roundId) internal {
+        uint256 totalPrice = 0;
+        uint256 validSubmissionCount = 0;
+
+        uint256 nodeCount = nodes.length;
+        for (uint256 i = 0; i < nodeCount; i++) {
+            address node = nodes[i];
+            if (hasSubmitted[coin][roundId][node]) {
+                totalPrice += nodePrices[coin][roundId][node];
+                validSubmissionCount += 1;
+            }
+        }
+
+        if (validSubmissionCount > 0) {
+            uint256 avgPrice = totalPrice / validSubmissionCount;
+            currentPrices[coin] = avgPrice;
+            emit PriceUpdated(coin, avgPrice, roundId);
+        }
+
+        rounds[coin].id += 1;
+        rounds[coin].totalSubmissionCount = 0;
+        rounds[coin].lastUpdatedAt = block.timestamp;
     }
 }
